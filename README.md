@@ -18,7 +18,7 @@ theorem via the Monotone Convergence Theorem.
 | Basic.lean | 1,261 | 79 | 0 |
 | PowerLaw.lean | 604 | 22 | 0 |
 | StochasticSOS.lean | 386 | 21 | 0 |
-| AReaL.lean | 347 | 16 | 0 |
+| AReaL.lean | 420 | 16 | 0 |
 | StochasticRates.lean | 1,558 | 50+ | 0 |
 | **Total** | **4,229** | **200+** | **0** |
 
@@ -48,7 +48,7 @@ Power-law convergence rates (sequel paper):
 - Hölder rate transfer: morphism regularity controls rate distortion
 - Gradient descent as a concrete SOS with O(1/n) rate as a free theorem
 
-### AReaL.lean (347 lines)
+### AReaL.lean (420 lines)
 AReaL integration (async RL):
 - GRPO as a concrete SOS (no axioms) — the DeepSeek R1 algorithm
 - Doubly constraint-lifted SOS for async training (staleness + M2PO)
