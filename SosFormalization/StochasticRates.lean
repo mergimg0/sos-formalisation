@@ -1459,6 +1459,346 @@ theorem rpow_recurrence_div
             exact real_bernoulli_product hp hcenp_nn hlt
       _ = ρ := mul_one ρ
 
+/-! ## SOS-Level Wrappers: Real-Exponent Łojasiewicz Rates
+
+The algebraic `rpow_recurrence_div` lemma is tied to a bare non-negative
+sequence.  We lift it to three end-user theorems:
+
+* `SOS.power_law_rate_rpow` — deterministic O(1/n) rate under the
+  real-exponent Łojasiewicz condition (α = p + 1, real p ≥ 1).
+* `StochasticSOS.expected_rate_rpow` — stochastic expected-gap rate,
+  via a real-exponent Jensen bridge.
+* `StochasticSOS.pathwise_rate_rpow` — pathwise almost-sure rate.
+
+All three reuse the deterministic induction inside `rpow_recurrence_div`
+verbatim; the real-exponent case differs only in the Bernoulli step
+(handled once in `real_bernoulli_product`). -/
+
+/-- Real-α counterpart of `small_constant_of_recurrence_general`: the
+    small-constant condition c · e₀^p ≤ 1 is derivable from the rpow
+    recurrence e_{n+1} ≤ e_n · (1 - c · e_n^p) together with non-negativity. -/
+lemma small_constant_of_recurrence_rpow
+    (e : ℕ → ℝ) (c p : ℝ) (hp : 1 ≤ p)
+    (_hc_pos : 0 < c)
+    (hnn : ∀ n, 0 ≤ e n)
+    (hrec : ∀ n, e (n + 1) ≤ e n * (1 - c * e n ^ p)) :
+    c * e 0 ^ p ≤ 1 := by
+  by_contra h
+  push_neg at h
+  have hp_ne : (p : ℝ) ≠ 0 := by linarith
+  have he0_pos : 0 < e 0 := by
+    rcases eq_or_lt_of_le (hnn 0) with he0 | he0
+    · exfalso
+      rw [← he0, Real.zero_rpow hp_ne] at h
+      linarith
+    · exact he0
+  have hrpow_pos : 0 < e 0 ^ p := Real.rpow_pos_of_pos he0_pos p
+  -- c · e₀^p > 1 ⇒ e₁ ≤ e₀ · (1 - c · e₀^p) < 0, contradicting e₁ ≥ 0
+  have hneg : e 0 * (1 - c * e 0 ^ p) < 0 := by nlinarith
+  linarith [hrec 0, hnn 1]
+
+/-- SOS-level real-α counterpart of `SOS.loj_implies_small`: the
+    small-constant condition c · e₀^p ≤ 1 follows from the rpow
+    Łojasiewicz condition at π₀ together with the upper bound M. -/
+lemma SOS.loj_implies_small_rpow (S : SOS) (pi0 : S.Pi) (p : ℝ) (hp : 1 ≤ p)
+    {M : ℝ} (hM : ∀ π : S.Pi, S.E π ≤ M)
+    {c : ℝ} (_hc_pos : 0 < c)
+    (hLoj : ∀ π : S.Pi, S.E (S.delta π) - S.E π ≥ c * (M - S.E π) ^ (p + 1)) :
+    c * (M - S.E pi0) ^ p ≤ 1 := by
+  by_contra h
+  push_neg at h
+  set e0 := M - S.E pi0 with he0_def
+  have he0_nn : 0 ≤ e0 := by linarith [hM pi0]
+  have hp_ne : (p : ℝ) ≠ 0 := by linarith
+  have hp1_ne : (p + 1 : ℝ) ≠ 0 := by linarith
+  have he0_pos : 0 < e0 := by
+    rcases eq_or_lt_of_le he0_nn with he0_eq | hpos
+    · exfalso
+      rw [← he0_eq, Real.zero_rpow hp_ne] at h
+      linarith
+    · exact hpos
+  -- Factor e0^(p+1) = e0^p · e0 (Real.rpow_add_one' handles 0 ≤ e0)
+  have hfactor : e0 ^ (p + 1) = e0 ^ p * e0 :=
+    Real.rpow_add_one' he0_nn hp1_ne
+  -- From hLoj at pi0: E(δ pi0) - E pi0 ≥ c · e0^(p+1); combined with hM:
+  -- e0 = M - E pi0 ≥ (M - E pi0) - (M - E(δ pi0)) = E(δ pi0) - E pi0 ≥ c · e0^(p+1)
+  have hbound : e0 ≥ c * e0 ^ (p + 1) := by linarith [hLoj pi0, hM (S.delta pi0)]
+  -- But h says c · e0^p > 1, so c · e0^(p+1) = (c · e0^p) · e0 > e0
+  have hrhs_gt : c * e0 ^ (p + 1) > e0 := by
+    rw [hfactor]
+    calc c * (e0 ^ p * e0)
+        = c * e0 ^ p * e0 := by ring
+      _ > 1 * e0 := mul_lt_mul_of_pos_right h he0_pos
+      _ = e0 := one_mul _
+  linarith
+
+/-- **SOS real-exponent power-law rate** (division form): under the
+    Łojasiewicz condition with REAL exponent p + 1 ≥ 2, the p-th rpow of
+    the gap decays as O(1/n):
+    (M - orbit(n)) ^ p ≤ e₀^p / (1 + c·p·e₀^p·n).
+
+    This is the SOS-level wrapper around `rpow_recurrence_div`, mirroring
+    `SOS.power_law_rate_general` (ℕ case).  Consumes the rpow Łojasiewicz
+    hypothesis and returns the O(1/n) rate on the p-th rpow of the gap. -/
+theorem SOS.power_law_rate_rpow (S : SOS) (pi0 : S.Pi) (p : ℝ) (hp : 1 ≤ p)
+    {M : ℝ} (hM : ∀ π : S.Pi, S.E π ≤ M)
+    {c : ℝ} (hc_pos : 0 < c)
+    (hLoj : ∀ π : S.Pi, S.E (S.delta π) - S.E π ≥ c * (M - S.E π) ^ (p + 1))
+    (n : ℕ) :
+    (M - S.orbit pi0 n) ^ p ≤
+      (M - S.E pi0) ^ p / (1 + c * p * (M - S.E pi0) ^ p * ↑n) := by
+  have he0_nn : 0 ≤ M - S.E pi0 := by linarith [hM pi0]
+  have hsmall : c * (M - S.E pi0) ^ p ≤ 1 :=
+    S.loj_implies_small_rpow pi0 p hp hM hc_pos hLoj
+  have hp1_ne : (p + 1 : ℝ) ≠ 0 := by linarith
+  -- Derive the rpow recurrence on the gap sequence from the Łojasiewicz condition
+  have hrec : ∀ k, M - S.orbit pi0 (k + 1) ≤
+      (M - S.orbit pi0 k) * (1 - c * (M - S.orbit pi0 k) ^ p) := by
+    intro k
+    set en := M - S.orbit pi0 k
+    have hen_nn : 0 ≤ en := S.gap_nonneg pi0 hM k
+    have hfactor : en ^ (p + 1) = en ^ p * en :=
+      Real.rpow_add_one' hen_nn hp1_ne
+    -- From hLoj at δ^[k] pi0: E(δ^[k+1] pi0) - E(δ^[k] pi0) ≥ c · en^(p+1)
+    have hstep : M - S.orbit pi0 (k + 1) ≤ en - c * en ^ (p + 1) := by
+      change M - S.orbit pi0 (k + 1) ≤
+        (M - S.orbit pi0 k) - c * (M - S.orbit pi0 k) ^ (p + 1)
+      simp only [SOS.orbit, Function.iterate_succ', Function.comp_apply]
+      linarith [hLoj (S.delta^[k] pi0)]
+    have hcfact : c * en ^ (p + 1) = en * (c * en ^ p) := by rw [hfactor]; ring
+    linarith
+  exact rpow_recurrence_div
+    (fun k => M - S.orbit pi0 k) c (M - S.E pi0) p hp hc_pos
+    he0_nn hsmall
+    (S.gap_nonneg pi0 hM) (S.gap_le_initial pi0 hM) hrec n
+
+/-! ## Stochastic Real-Exponent Rate
+
+The Jensen bridge carries through verbatim: convexity of `x ↦ x^(p+1)` on
+[0,∞) for real p + 1 ≥ 1 is `convexOn_rpow`, and the measure-theoretic
+Jensen inequality `ConvexOn.map_average_le` applies to give
+ēₙ^(p+1) ≤ 𝔼[(M − eval(ω(n)))^(p+1)], closing the loop with the
+tower property. -/
+
+noncomputable section StochasticRealExponent
+
+open Preorder
+
+variable (S : StochasticSOS) (π₀ : S.P)
+
+/-- **Stochastic real-exponent Jensen bridge**: under the stochastic
+    Łojasiewicz condition with REAL exponent p + 1 (p ≥ 1), the expected
+    gap satisfies ē_{n+1} ≤ ē_n · (1 - c · ē_n ^ p).
+
+    Proof structure parallels `expectedGap_recurrence_general`:
+    (a) tower property + Łojasiewicz on the conditioning at step n;
+    (b) Jensen via `convexOn_rpow` in place of `convexOn_pow`.
+    The final real-exponent factorisation e^(p+1) = e · e^p uses
+    `Real.rpow_add_one'` (base nonneg, exponent p + 1 ≠ 0). -/
+theorem StochasticSOS.expectedGap_recurrence_rpow
+    (p : ℝ) (hp : 1 ≤ p)
+    {M : ℝ} (hM : ∀ π : S.P, S.eval π ≤ M)
+    {c : ℝ} (hc_pos : 0 < c)
+    (hLoj : ∀ π : S.P,
+      ∫ π', S.eval π' ∂(S.kernel π) - S.eval π ≥ c * (M - S.eval π) ^ (p + 1))
+    (n : ℕ) :
+    S.expectedGap π₀ M (n + 1) ≤
+      S.expectedGap π₀ M n * (1 - c * S.expectedGap π₀ M n ^ p) := by
+  simp only [StochasticSOS.expectedGap, StochasticSOS.expectedEval]
+  set μ := sosPathMeasure π₀ S.kernel
+  set ēn := M - ∫ ω, S.eval (ω n) ∂μ with hēn_def
+  have hp1_nn : (0 : ℝ) ≤ p + 1 := by linarith
+  have hp1_ne : (p + 1 : ℝ) ≠ 0 := by linarith
+  -- Pointwise non-negativity of the gap integrand
+  have hgap_nn : ∀ ω : ℕ → S.P, 0 ≤ M - S.eval (ω n) :=
+    fun ω => by linarith [hM (ω n)]
+  -- Integrability of (M - eval(n))^(p+1): bounded by (M + B)^(p+1)
+  have hfp_int : Integrable (fun ω => (M - S.eval (ω n)) ^ (p + 1)) μ := by
+    obtain ⟨B, hB⟩ := S.eval_bound
+    have hgap_meas : Measurable (fun ω : ℕ → S.P => M - S.eval (ω n)) :=
+      measurable_const.sub (S.eval_measurable.comp (measurable_pi_apply n))
+    have hrpow_meas : Measurable (fun ω : ℕ → S.P => (M - S.eval (ω n)) ^ (p + 1)) :=
+      (Real.continuous_rpow_const hp1_nn).measurable.comp hgap_meas
+    exact Integrable.of_bound hrpow_meas.aestronglyMeasurable
+      ((M + ↑B) ^ (p + 1)) (ae_of_all μ fun ω => by
+        simp only [Real.norm_eq_abs]
+        rw [abs_of_nonneg (Real.rpow_nonneg (hgap_nn ω) _)]
+        exact Real.rpow_le_rpow (hgap_nn ω)
+          (by have := (abs_le.mp (hB (ω n))).1; linarith) hp1_nn)
+  -- Part (a): Tower property + Łojasiewicz on the conditioning at step n.
+  -- Structurally identical to the ℕ case; only the integrand exponent differs.
+  have h_tower_loj : ∫ ω, S.eval (ω (n + 1)) ∂μ ≥
+      ∫ ω, S.eval (ω n) ∂μ + c * ∫ ω, (M - S.eval (ω n)) ^ (p + 1) ∂μ := by
+    let ℱ : Filtration ℕ (MeasurableSpace.pi (m := fun _ => S.ms)) :=
+      Filtration.piLE (X := fun _ => S.P)
+    have hm : (ℱ n : MeasurableSpace (ℕ → S.P)) ≤ MeasurableSpace.pi := ℱ.le n
+    haveI : @IsFiniteMeasure (ℕ → S.P) (ℱ n) (μ.trim hm) :=
+      @isFiniteMeasure_trim (ℕ → S.P) (ℱ n) MeasurableSpace.pi μ hm inferInstance
+    haveI : @SigmaFinite (ℕ → S.P) (ℱ n) (μ.trim hm) :=
+      @IsFiniteMeasure.toSigmaFinite _ _ _ inferInstance
+    have hμ : μ = Kernel.traj (X := fun _ => S.P) (fun m => homKernel S.kernel m) 0
+        ((MeasurableEquiv.piUnique (fun _ : ↥(Finset.Iic 0) => S.P)).symm π₀) := by
+      change sosPathMeasure π₀ S.kernel = _
+      unfold sosPathMeasure Kernel.trajMeasure
+      rw [Measure.map_dirac
+        (MeasurableEquiv.piUnique (fun _ : ↥(Finset.Iic 0) => S.P)).symm.measurable]
+      exact Measure.dirac_bind
+        (Kernel.traj (X := fun _ => S.P) (fun m => homKernel S.kernel m) 0).measurable _
+    have hint : Integrable (S.evalProcess (n + 1))
+        (Kernel.traj (X := fun _ => S.P) (fun m => homKernel S.kernel m) 0
+          ((MeasurableEquiv.piUnique (fun _ : ↥(Finset.Iic 0) => S.P)).symm π₀)) :=
+      hμ ▸ S.evalProcess_integrable π₀ (n + 1)
+    have hae : ∀ᵐ ω ∂μ,
+        S.eval (ω n) + c * (M - S.eval (ω n)) ^ (p + 1) ≤
+          (μ[S.evalProcess (n + 1) | ↑(ℱ n)]) ω := by
+      rw [hμ]
+      filter_upwards [Kernel.condExp_traj (Nat.zero_le n) hint] with ω hω
+      rw [hω]
+      simp only [StochasticSOS.evalProcess]
+      suffices h : ∫ y, S.eval (y (n + 1)) ∂Kernel.traj (X := fun _ => S.P)
+          (fun m => homKernel S.kernel m) n (frestrictLe n ω) =
+          ∫ z, S.eval z ∂S.kernel (ω n) by
+        rw [h]; linarith [hLoj (ω n)]
+      have hmeas : Measurable (fun (y : ℕ → S.P) => y (n + 1)) :=
+        measurable_pi_apply (n + 1)
+      rw [← integral_map hmeas.aemeasurable S.eval_measurable.aestronglyMeasurable]
+      congr 1
+      rw [← Kernel.map_apply _ hmeas, Kernel.map_traj_succ_self]
+      simp only [homKernel, Kernel.comap_apply, frestrictLe_apply]
+    have hint_lhs : Integrable
+        (fun ω => S.eval (ω n) + c * (M - S.eval (ω n)) ^ (p + 1)) μ :=
+      (S.evalProcess_integrable π₀ n).add (hfp_int.const_mul c)
+    have h1 := integral_mono_ae hint_lhs integrable_condExp hae
+    have h2 : ∫ ω, (μ[S.evalProcess (n + 1) | ↑(ℱ n)]) ω ∂μ =
+        ∫ ω, S.evalProcess (n + 1) ω ∂μ := integral_condExp hm
+    simp only [StochasticSOS.evalProcess] at h2
+    have h3 : ∫ x, S.eval (x n) + c * (M - S.eval (x n)) ^ (p + 1) ∂μ =
+        ∫ x, S.eval (x n) ∂μ + c * ∫ x, (M - S.eval (x n)) ^ (p + 1) ∂μ := by
+      have : ∫ x, S.eval (x n) + c * (M - S.eval (x n)) ^ (p + 1) ∂μ =
+          ∫ x, S.evalProcess n x ∂μ + ∫ x, (c * (M - S.eval (x n)) ^ (p + 1)) ∂μ :=
+        integral_add (S.evalProcess_integrable π₀ n) (hfp_int.const_mul c)
+      simp only [StochasticSOS.evalProcess, integral_const_mul] at this
+      exact this
+    linarith
+  -- Part (b): Jensen for x^(p+1) via ConvexOn.map_average_le, now with rpow
+  have hf_int : Integrable (fun ω => M - S.eval (ω n)) μ :=
+    (integrable_const M).sub (S.evalProcess_integrable π₀ n)
+  have h_jensen : ēn ^ (p + 1) ≤ ∫ ω, (M - S.eval (ω n)) ^ (p + 1) ∂μ := by
+    have hlin : ∫ ω, (M - S.eval (ω n)) ∂μ = ēn := by
+      change ∫ ω, (M - S.eval (ω n)) ∂μ = M - ∫ ω, S.eval (ω n) ∂μ
+      have hsub' : ∫ ω, (M - S.eval (ω n)) ∂μ =
+          ∫ ω, M ∂μ - ∫ ω, S.eval (ω n) ∂μ :=
+        integral_sub (integrable_const M) (S.evalProcess_integrable π₀ n)
+      rw [hsub', integral_const]
+      simp only [Measure.real, measure_univ, ENNReal.toReal_one, one_smul, μ]
+    have hconv : ConvexOn ℝ (Set.Ici 0) (fun x : ℝ => x ^ (p + 1)) :=
+      convexOn_rpow (by linarith : (1 : ℝ) ≤ p + 1)
+    have hcont : ContinuousOn (fun x : ℝ => x ^ (p + 1)) (Set.Ici 0) :=
+      (Real.continuous_rpow_const hp1_nn).continuousOn
+    have hclosed : IsClosed (Set.Ici (0 : ℝ)) := isClosed_Ici
+    have hfs : ∀ᵐ ω ∂μ, (fun ω => M - S.eval (ω n)) ω ∈ Set.Ici (0 : ℝ) :=
+      ae_of_all μ fun ω => Set.mem_Ici.mpr (hgap_nn ω)
+    have hgi : Integrable ((fun x : ℝ => x ^ (p + 1)) ∘ (fun ω => M - S.eval (ω n))) μ :=
+      hfp_int
+    have hj := ConvexOn.map_average_le hconv hcont hclosed hfs hf_int hgi
+    rw [average_eq_integral, average_eq_integral] at hj
+    rwa [hlin] at hj
+  -- Combine (a) + (b): ē_{n+1} ≤ ēn - c · ēn^(p+1) = ēn · (1 - c · ēn^p)
+  have hēn_nn : 0 ≤ ēn := by
+    have := S.expectedGap_nonneg π₀ hM n
+    simp only [StochasticSOS.expectedGap, StochasticSOS.expectedEval] at this
+    exact this
+  have hpow : ēn ^ (p + 1) = ēn ^ p * ēn :=
+    Real.rpow_add_one' hēn_nn hp1_ne
+  -- Goal (after the opening simp) is:
+  --   M - ∫ S.eval (ω (n+1)) ∂μ ≤ ēn * (1 - c · ēn^p)
+  -- which matches ēn - c · ēn^(p+1) once we use hpow.
+  nlinarith [mul_le_mul_of_nonneg_left h_jensen (le_of_lt hc_pos)]
+
+/-- **Stochastic real-exponent O(1/n) rate**: the p-th rpow of the
+    expected gap decays as O(1/n):
+    ēₙ ^ p ≤ ē₀ ^ p / (1 + c · p · ē₀ ^ p · n).
+
+    Assembles the Jensen bridge `expectedGap_recurrence_rpow` with the
+    standalone algebraic lemma `rpow_recurrence_div`.  Mirrors the ℕ
+    wrapper `expected_rate_general`. -/
+theorem StochasticSOS.expected_rate_rpow
+    (p : ℝ) (hp : 1 ≤ p)
+    {M : ℝ} (hM : ∀ π : S.P, S.eval π ≤ M)
+    {c : ℝ} (hc_pos : 0 < c)
+    (hLoj : ∀ π : S.P,
+      ∫ π', S.eval π' ∂(S.kernel π) - S.eval π ≥ c * (M - S.eval π) ^ (p + 1))
+    (n : ℕ) :
+    S.expectedGap π₀ M n ^ p ≤
+      S.expectedGap π₀ M 0 ^ p /
+        (1 + c * p * S.expectedGap π₀ M 0 ^ p * ↑n) := by
+  exact rpow_recurrence_div
+    (S.expectedGap π₀ M) c (S.expectedGap π₀ M 0) p hp hc_pos
+    (S.expectedGap_nonneg π₀ hM 0)
+    (small_constant_of_recurrence_rpow
+      (S.expectedGap π₀ M) c p hp hc_pos
+      (S.expectedGap_nonneg π₀ hM)
+      (S.expectedGap_recurrence_rpow π₀ p hp hM hc_pos hLoj))
+    (S.expectedGap_nonneg π₀ hM)
+    (S.expectedGap_le_initial π₀ hM)
+    (S.expectedGap_recurrence_rpow π₀ p hp hM hc_pos hLoj)
+    n
+
+/-- **Pathwise real-exponent O(1/n) rate**: under a pathwise Łojasiewicz
+    condition with REAL exponent p + 1, the deterministic real-α rate
+    applies to almost every realisation.  Parallels
+    `StochasticSOS.pathwise_rate_alpha2` with rpow throughout. -/
+theorem StochasticSOS.pathwise_rate_rpow
+    (p : ℝ) (hp : 1 ≤ p)
+    {M : ℝ} (hM : ∀ π : S.P, S.eval π ≤ M)
+    {c : ℝ} (hc_pos : 0 < c)
+    (hLoj_pw : ∀ᵐ ω ∂(sosPathMeasure π₀ S.kernel),
+      ∀ k : ℕ, S.eval (ω (k + 1)) - S.eval (ω k) ≥
+        c * (M - S.eval (ω k)) ^ (p + 1)) :
+    ∀ᵐ ω ∂(sosPathMeasure π₀ S.kernel), ∀ (k : ℕ),
+      (M - S.eval (ω k)) ^ p ≤
+        (M - S.eval (ω 0)) ^ p /
+          (1 + c * p * (M - S.eval (ω 0)) ^ p * ↑k) := by
+  filter_upwards [hLoj_pw] with ω hω
+  intro k
+  have hp1_ne : (p + 1 : ℝ) ≠ 0 := by linarith
+  have hnn : ∀ j, 0 ≤ (fun i => M - S.eval (ω i)) j := fun j => by
+    simp only; linarith [hM (ω j)]
+  -- Monotonicity along the path: E(ω(j)) is non-decreasing
+  have hpath_mono : ∀ j, S.eval (ω 0) ≤ S.eval (ω j) := by
+    intro j
+    induction j with
+    | zero => exact le_refl _
+    | succ j ih =>
+      have step := hω j
+      have hrpow_nn : 0 ≤ (M - S.eval (ω j)) ^ (p + 1) :=
+        Real.rpow_nonneg (by linarith [hM (ω j)]) _
+      have hcrpow_nn : 0 ≤ c * (M - S.eval (ω j)) ^ (p + 1) :=
+        mul_nonneg hc_pos.le hrpow_nn
+      linarith
+  have hle : ∀ j, (fun i => M - S.eval (ω i)) j ≤ (fun i => M - S.eval (ω i)) 0 :=
+    fun j => by simp only; linarith [hpath_mono j]
+  -- Derive the rpow recurrence along this path.
+  have hrec : ∀ j, (fun i => M - S.eval (ω i)) (j + 1) ≤
+      (fun i => M - S.eval (ω i)) j *
+        (1 - c * (fun i => M - S.eval (ω i)) j ^ p) := by
+    intro j; simp only
+    set ej := M - S.eval (ω j)
+    have hej_nn : 0 ≤ ej := by linarith [hM (ω j)]
+    have hfactor : ej ^ (p + 1) = ej ^ p * ej :=
+      Real.rpow_add_one' hej_nn hp1_ne
+    have hstep := hω j
+    -- M - eval(ω(j+1)) ≤ M - eval(ω j) - c · (M - eval(ω j))^(p+1)
+    have hgap_step : M - S.eval (ω (j + 1)) ≤ ej - c * ej ^ (p + 1) := by linarith
+    -- Factor: ej - c · ej^(p+1) = ej · (1 - c · ej^p)
+    nlinarith [hgap_step, hfactor]
+  apply rpow_recurrence_div (fun j => M - S.eval (ω j)) c (M - S.eval (ω 0))
+    p hp hc_pos (by linarith [hM (ω 0)])
+    (small_constant_of_recurrence_rpow _ c p hp hc_pos hnn hrec)
+    hnn hle hrec
+
+end StochasticRealExponent
+
 end RealExponent
 
 /-! # InhomogeneousSOS: Time-Dependent Sacred Object Systems

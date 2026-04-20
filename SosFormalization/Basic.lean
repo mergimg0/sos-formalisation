@@ -164,6 +164,67 @@ theorem SOS.constraintLift_convergence (S : SOS) (C : S.Pi → Prop) (π0 : S.Pi
       Filter.atTop (nhds L) :=
   (S.constraintLift C).convergence π0
 
+/-! ## Phase Transition: Switching Evaluators Mid-Training
+
+When the evaluator changes from E₁ to E₂ at step k (e.g., ProofForge
+binary → efficiency reward at step 50), the combined orbit is NOT covered
+by the single-SOS convergence theorem because E changes mid-trajectory.
+
+What IS provable:
+1. Each segment individually converges (trivial from SOS.convergence).
+2. The transition drop E₁(π_k) - E₂(π_k) is non-negative when E₂ ≤ E₁
+   pointwise (efficiency reward is stricter than binary).
+3. The combined orbit is piecewise monotone with at most one descent
+   at the transition boundary.
+
+What is NOT proven here (and cannot be without additional axioms):
+- That L₂ ≥ L₁ (the second limit may be lower than the first).
+- That the combined orbit converges in any global sense.
+
+Paper language: "Piecewise convergence across evaluator transitions is
+a consequence of the SOS framework (Theorem restarted_convergence).
+The transition boundary has a bounded non-monotone step
+(Theorem evaluator_drop_nonneg)." -/
+
+/-- **Restarted Convergence**: any SOS converges from any starting point,
+    including a policy obtained as the k-th iterate of a different SOS.
+    This is a direct corollary of SOS.convergence applied to the
+    transition starting point π_k = δ₁^[k](π₀). -/
+theorem SOS.restarted_convergence
+    (S₁ S₂ : SOS)
+    (h_same_Pi : S₁.Pi = S₂.Pi)
+    (π₀ : S₁.Pi) (k : ℕ) :
+    ∃ L₂ : ℝ, Filter.Tendsto
+      (S₂.orbit (h_same_Pi ▸ (S₁.delta^[k] π₀)))
+      Filter.atTop (nhds L₂) :=
+  S₂.convergence (h_same_Pi ▸ (S₁.delta^[k] π₀))
+
+/-- **Evaluator Drop Bound**: when the new evaluator E₂ is pointwise
+    ≤ the old evaluator E₁ (efficiency reward ≤ binary reward for all
+    policies), the one-step drop at the transition is non-negative.
+    This bounds the non-monotone step: the orbit can decrease by at most
+    E₁(π) - E₂(π) at the transition. -/
+theorem SOS.evaluator_drop_nonneg
+    (S₁ S₂ : SOS)
+    (h_same_Pi : S₁.Pi = S₂.Pi)
+    (h_stricter : ∀ (π : S₁.Pi), S₂.E (h_same_Pi ▸ π) ≤ S₁.E π)
+    (π : S₁.Pi) :
+    0 ≤ S₁.E π - S₂.E (h_same_Pi ▸ π) :=
+  sub_nonneg.mpr (h_stricter π)
+
+/-- **Piecewise Convergence**: each segment of a two-phase training run
+    converges independently. A direct consequence of SOS.convergence
+    applied twice. -/
+theorem SOS.piecewise_convergence
+    (S₁ S₂ : SOS)
+    (h_same_Pi : S₁.Pi = S₂.Pi)
+    (π₀ : S₁.Pi) :
+    (∃ L₁, Filter.Tendsto (S₁.orbit π₀) Filter.atTop (nhds L₁)) ∧
+    (∀ k, ∃ L₂, Filter.Tendsto
+      (S₂.orbit (h_same_Pi ▸ (S₁.delta^[k] π₀)))
+      Filter.atTop (nhds L₂)) :=
+  ⟨S₁.convergence π₀, fun _ => S₂.convergence _⟩
+
 /-! ## Geometric Convergence Rate under Łojasiewicz Condition
 
 If each update step captures at least a fixed fraction c of the remaining
