@@ -2,3 +2,5 @@ import SosFormalization.Basic
 import SosFormalization.PowerLaw
 import SosFormalization.AReaL
 import SosFormalization.StochasticRates
+import SosFormalization.ProofForge
+import SosFormalization.CGLESubstrate
